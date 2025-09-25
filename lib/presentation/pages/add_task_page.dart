@@ -6,7 +6,9 @@ import '../../domain/entities/task_entity.dart';
 import '../controllers/task_controller.dart';
 
 class AddTaskPage extends StatefulWidget {
-  const AddTaskPage({super.key});
+  final TaskEntity? taskToEdit;
+
+  const AddTaskPage({super.key, this.taskToEdit});
 
   @override
   State<AddTaskPage> createState() => _AddTaskPageState();
@@ -19,15 +21,57 @@ class _AddTaskPageState extends State<AddTaskPage> {
 
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _startTime = TimeOfDay.now();
-  TimeOfDay _endTime = TimeOfDay.now().replacing(
-    hour: TimeOfDay.now().hour + 1,
+  // Initialize endTime to one hour after startTime, wrapping around midnight if needed
+  late final TimeOfDay _initialStart = TimeOfDay.now();
+  late final TimeOfDay _initialEnd = TimeOfDay(
+    hour: (_initialStart.hour + 1) % 24,
+    minute: _initialStart.minute,
   );
+  TimeOfDay _endTime = TimeOfDay.now();
+
+  // Priority for the new task (default normal)
+  TaskPriority _priority = TaskPriority.normal;
+
+  // Assign initial values in initState instead of at declaration time
 
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize times
+    _startTime = _initialStart;
+    _endTime = _initialEnd;
+
+    // If editing, prefill fields from provided task
+    final editing = widget.taskToEdit;
+    if (editing != null) {
+      _titleController.text = editing.title;
+      _descriptionController.text = editing.description;
+      _selectedDate = editing.date;
+      _startTime = TimeOfDay(
+        hour: editing.startTime.hour,
+        minute: editing.startTime.minute,
+      );
+      _endTime = TimeOfDay(
+        hour: editing.endTime.hour,
+        minute: editing.endTime.minute,
+      );
+      _priority = editing.priority;
+    }
+    // Initialize selected date from the shared TaskController so AddTaskPage
+    // opens with the same date the user selected on the HomePage.
+    try {
+      final controller = Get.find<TaskController>();
+      _selectedDate = controller.selectedDate;
+    } catch (e) {
+      // If controller isn't available, keep default DateTime.now()
+    }
   }
 
   @override
@@ -124,6 +168,51 @@ class _AddTaskPageState extends State<AddTaskPage> {
                   }
                   return null;
                 },
+              ),
+
+              const SizedBox(height: 20),
+
+              // Priority field
+              const Text(
+                'Priority',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primaryText,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.pendingTask),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<TaskPriority>(
+                    value: _priority,
+                    items: const [
+                      DropdownMenuItem(
+                        value: TaskPriority.low,
+                        child: Text('Low'),
+                      ),
+                      DropdownMenuItem(
+                        value: TaskPriority.normal,
+                        child: Text('Normal'),
+                      ),
+                      DropdownMenuItem(
+                        value: TaskPriority.high,
+                        child: Text('High'),
+                      ),
+                    ],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() {
+                        _priority = v;
+                      });
+                    },
+                  ),
+                ),
               ),
 
               const SizedBox(height: 20),
@@ -339,6 +428,10 @@ class _AddTaskPageState extends State<AddTaskPage> {
     if (_formKey.currentState!.validate()) {
       final controller = Get.find<TaskController>();
 
+      // Ensure the controller's selected date matches the task's date so
+      // the controller reloads tasks for the correct day after insertion.
+      controller.changeSelectedDate(_selectedDate);
+
       final startDateTime = DateTime(
         _selectedDate.year,
         _selectedDate.month,
@@ -355,17 +448,32 @@ class _AddTaskPageState extends State<AddTaskPage> {
         _endTime.minute,
       );
 
-      final task = TaskEntity(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: _titleController.text,
-        description: _descriptionController.text,
-        date: _selectedDate,
-        startTime: startDateTime,
-        endTime: endDateTime,
-        isCompleted: false,
-      );
+      if (widget.taskToEdit != null) {
+        // Update existing task (keep same id and isCompleted flag)
+        final updated = widget.taskToEdit!.copyWith(
+          title: _titleController.text,
+          description: _descriptionController.text,
+          date: _selectedDate,
+          startTime: startDateTime,
+          endTime: endDateTime,
+          priority: _priority,
+        );
 
-      controller.addTask(task);
+        controller.updateTask(updated);
+      } else {
+        final task = TaskEntity(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: _titleController.text,
+          description: _descriptionController.text,
+          date: _selectedDate,
+          startTime: startDateTime,
+          endTime: endDateTime,
+          isCompleted: false,
+          priority: _priority,
+        );
+
+        controller.addTask(task);
+      }
       Get.back();
     }
   }

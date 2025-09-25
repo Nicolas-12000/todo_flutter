@@ -1,3 +1,5 @@
+enum TaskPriority { low, normal, high }
+
 class TaskEntity {
   final String id;
   final String title;
@@ -6,6 +8,7 @@ class TaskEntity {
   final DateTime startTime;
   final DateTime endTime;
   final bool isCompleted;
+  final TaskPriority priority;
 
   const TaskEntity({
     required this.id,
@@ -15,6 +18,7 @@ class TaskEntity {
     required this.startTime,
     required this.endTime,
     required this.isCompleted,
+    this.priority = TaskPriority.normal,
   });
 
   TaskEntity copyWith({
@@ -25,6 +29,7 @@ class TaskEntity {
     DateTime? startTime,
     DateTime? endTime,
     bool? isCompleted,
+    TaskPriority? priority,
   }) {
     return TaskEntity(
       id: id ?? this.id,
@@ -34,6 +39,7 @@ class TaskEntity {
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       isCompleted: isCompleted ?? this.isCompleted,
+      priority: priority ?? this.priority,
     );
   }
 
@@ -47,7 +53,8 @@ class TaskEntity {
         other.date == date &&
         other.startTime == startTime &&
         other.endTime == endTime &&
-        other.isCompleted == isCompleted;
+        other.isCompleted == isCompleted &&
+        other.priority == priority;
   }
 
   @override
@@ -58,6 +65,7 @@ class TaskEntity {
         date.hashCode ^
         startTime.hashCode ^
         endTime.hashCode ^
-        isCompleted.hashCode;
+        isCompleted.hashCode ^
+        priority.hashCode;
   }
 }

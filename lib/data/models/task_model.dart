@@ -1,6 +1,9 @@
 import '../../domain/entities/task_entity.dart';
 
 class TaskModel extends TaskEntity {
+  @override
+  final TaskPriority priority;
+
   const TaskModel({
     required super.id,
     required super.title,
@@ -9,29 +12,63 @@ class TaskModel extends TaskEntity {
     required super.startTime,
     required super.endTime,
     required super.isCompleted,
+    required this.priority,
   });
 
   factory TaskModel.fromJson(Map<String, dynamic> json) {
+    // Parse start_time and end_time which may be returned as String or DateTime
+    dynamic startRaw = json['start_time'];
+    dynamic endRaw = json['end_time'];
+
+    DateTime parseDynamicDate(dynamic v) {
+      if (v == null) return DateTime.fromMillisecondsSinceEpoch(0);
+      if (v is DateTime) return v;
+      if (v is String) return DateTime.parse(v);
+      if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+      // fallback: try toString then parse
+      return DateTime.parse(v.toString());
+    }
+
+    final startDt = parseDynamicDate(startRaw);
+    final endDt = parseDynamicDate(endRaw);
+
     return TaskModel(
       id: json['id'] as String,
       title: json['title'] as String,
       description: json['description'] as String,
-      date: DateTime.parse(json['date'] as String),
-      startTime: DateTime.parse(json['start_time'] as String),
-      endTime: DateTime.parse(json['end_time'] as String),
+      // Derive a date field from the start time (used by presentation layer to compare days)
+      date: DateTime(startDt.year, startDt.month, startDt.day),
+      startTime: startDt,
+      endTime: endDt,
       isCompleted: json['is_completed'] as bool,
+      priority: () {
+        final p = json['priority'];
+        if (p == null) return TaskPriority.normal;
+        if (p is String) {
+          switch (p.toLowerCase()) {
+            case 'low':
+              return TaskPriority.low;
+            case 'high':
+              return TaskPriority.high;
+            default:
+              return TaskPriority.normal;
+          }
+        }
+        return TaskPriority.normal;
+      }(),
     );
   }
 
   Map<String, dynamic> toJson() {
+    // For updates, send the fields that exist in the DB (no separate `date` column)
     return {
       'id': id,
       'title': title,
       'description': description,
-      'date': date.toIso8601String(),
       'start_time': startTime.toIso8601String(),
       'end_time': endTime.toIso8601String(),
       'is_completed': isCompleted,
+      'priority': priority.name,
     };
   }
 
@@ -40,10 +77,11 @@ class TaskModel extends TaskEntity {
     return {
       'title': title,
       'description': description,
-      'date': date.toIso8601String(),
+      // Store start_time and end_time (no `date` column in the DB schema)
       'start_time': startTime.toIso8601String(),
       'end_time': endTime.toIso8601String(),
       'is_completed': isCompleted,
+      'priority': priority.name,
     };
   }
 
@@ -57,6 +95,7 @@ class TaskModel extends TaskEntity {
       startTime: startTime,
       endTime: endTime,
       isCompleted: isCompleted,
+      priority: priority,
     );
   }
 
@@ -69,9 +108,11 @@ class TaskModel extends TaskEntity {
       startTime: entity.startTime,
       endTime: entity.endTime,
       isCompleted: entity.isCompleted,
+      priority: entity.priority,
     );
   }
 
+  @override
   TaskModel copyWith({
     String? id,
     String? title,
@@ -80,6 +121,7 @@ class TaskModel extends TaskEntity {
     DateTime? startTime,
     DateTime? endTime,
     bool? isCompleted,
+    TaskPriority? priority,
   }) {
     return TaskModel(
       id: id ?? this.id,
@@ -89,6 +131,7 @@ class TaskModel extends TaskEntity {
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       isCompleted: isCompleted ?? this.isCompleted,
+      priority: priority ?? this.priority,
     );
   }
 }

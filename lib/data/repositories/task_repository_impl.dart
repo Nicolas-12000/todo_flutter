@@ -14,7 +14,7 @@ class TaskRepositoryImpl implements TaskRepository {
       final response = await _client
           .from(_tableName)
           .select()
-          .order('date', ascending: true);
+          .order('start_time', ascending: true);
 
       return response
           .map<TaskEntity>((json) => TaskModel.fromJson(json).toEntity())
@@ -43,10 +43,47 @@ class TaskRepositoryImpl implements TaskRepository {
   Future<void> addTask(TaskEntity task) async {
     try {
       final taskModel = TaskModel.fromEntity(task);
-      
-      await _client
-          .from(_tableName)
-          .insert(taskModel.toJsonForInsert());
+      final payload = taskModel.toJsonForInsert();
+
+      try {
+        // Debug: log payload
+        // ignore: avoid_print
+        print('Supabase INSERT payload: $payload');
+        final res = await _client.from(_tableName).insert(payload).select();
+        // If Supabase returns an empty result, try fallback
+        if (res == null || (res is List && res.isEmpty)) {
+          if (payload.containsKey('priority')) {
+            final fallback = Map<String, dynamic>.from(payload)
+              ..remove('priority');
+            // ignore: avoid_print
+            print('Supabase INSERT fallback payload: $fallback');
+            final r2 = await _client.from(_tableName).insert(fallback).select();
+            if (r2 == null || (r2 is List && r2.isEmpty)) {
+              throw Exception('Insert returned empty result');
+            }
+          } else {
+            throw Exception('Insert returned empty result');
+          }
+        }
+      } catch (e) {
+        // If insert fails (for example missing 'priority' column), retry without priority
+        if (payload.containsKey('priority')) {
+          try {
+            final fallback = Map<String, dynamic>.from(payload)
+              ..remove('priority');
+            // ignore: avoid_print
+            print('Supabase INSERT fallback try payload: $fallback');
+            final r = await _client.from(_tableName).insert(fallback).select();
+            if (r == null || (r is List && r.isEmpty)) {
+              throw Exception('Insert fallback returned empty result: $r');
+            }
+            return;
+          } catch (e2) {
+            throw Exception('Insert failed (original: $e, fallback: $e2)');
+          }
+        }
+        throw Exception('Insert failed: $e');
+      }
     } catch (e) {
       throw Exception('Error al crear la tarea: $e');
     }
@@ -56,11 +93,61 @@ class TaskRepositoryImpl implements TaskRepository {
   Future<void> updateTask(TaskEntity task) async {
     try {
       final taskModel = TaskModel.fromEntity(task);
-      
-      await _client
-          .from(_tableName)
-          .update(taskModel.toJson())
-          .eq('id', task.id);
+      final payload = taskModel.toJson();
+
+      try {
+        // Debug: log payload
+        // ignore: avoid_print
+        print('Supabase UPDATE payload for id ${task.id}: $payload');
+        final res = await _client
+            .from(_tableName)
+            .update(payload)
+            .eq('id', task.id)
+            .select();
+        if (res == null || (res is List && res.isEmpty)) {
+          if (payload.containsKey('priority')) {
+            final fallback = Map<String, dynamic>.from(payload)
+              ..remove('priority');
+            // ignore: avoid_print
+            print(
+              'Supabase UPDATE fallback payload for id ${task.id}: $fallback',
+            );
+            final r2 = await _client
+                .from(_tableName)
+                .update(fallback)
+                .eq('id', task.id)
+                .select();
+            if (r2 == null || (r2 is List && r2.isEmpty)) {
+              throw Exception('Update returned empty result');
+            }
+          } else {
+            throw Exception('Update returned empty result');
+          }
+        }
+      } catch (e) {
+        if (payload.containsKey('priority')) {
+          try {
+            final fallback = Map<String, dynamic>.from(payload)
+              ..remove('priority');
+            // ignore: avoid_print
+            print(
+              'Supabase UPDATE fallback try payload for id ${task.id}: $fallback',
+            );
+            final r = await _client
+                .from(_tableName)
+                .update(fallback)
+                .eq('id', task.id)
+                .select();
+            if (r == null || (r is List && r.isEmpty)) {
+              throw Exception('Update fallback returned empty result: $r');
+            }
+            return;
+          } catch (e2) {
+            throw Exception('Update failed (original: $e, fallback: $e2)');
+          }
+        }
+        throw Exception('Update failed: $e');
+      }
     } catch (e) {
       throw Exception('Error al actualizar la tarea: $e');
     }
@@ -69,10 +156,7 @@ class TaskRepositoryImpl implements TaskRepository {
   @override
   Future<void> deleteTask(String id) async {
     try {
-      await _client
-          .from(_tableName)
-          .delete()
-          .eq('id', id);
+      await _client.from(_tableName).delete().eq('id', id);
     } catch (e) {
       throw Exception('Error al eliminar la tarea: $e');
     }
@@ -81,14 +165,15 @@ class TaskRepositoryImpl implements TaskRepository {
   @override
   Future<List<TaskEntity>> getTasksByDate(DateTime date) async {
     try {
+      // Query by start_time range to match tasks occurring on the given date
       final startOfDay = DateTime(date.year, date.month, date.day);
       final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59);
 
       final response = await _client
           .from(_tableName)
           .select()
-          .gte('date', startOfDay.toIso8601String())
-          .lte('date', endOfDay.toIso8601String())
+          .gte('start_time', startOfDay.toIso8601String())
+          .lte('start_time', endOfDay.toIso8601String())
           .order('start_time', ascending: true);
 
       return response
